@@ -511,9 +511,12 @@
 <!-- Header -->
 <header>
   <div class="logo">CARE<em>band</em></div>
-  <div class="conn-status">
-    <div class="conn-dot" id="conn-dot"></div>
-    <span id="conn-text">Not connected</span>
+  <div style="display:flex;align-items:center;gap:16px;">
+    <button onclick="openSettings()" id="settings-btn" style="display:none;background:none;border:1px solid var(--border);border-radius:var(--radius);padding:6px 14px;font-family:var(--mono);font-size:0.62rem;letter-spacing:0.12em;color:var(--muted);cursor:pointer;">SETTINGS</button>
+    <div class="conn-status">
+      <div class="conn-dot" id="conn-dot"></div>
+      <span id="conn-text">Not connected</span>
+    </div>
   </div>
 </header>
 
@@ -521,10 +524,29 @@
 <div id="connect-screen">
   <div class="connect-card">
     <div class="connect-wordmark">CAREband</div>
-    <div class="connect-sub">Open in Chrome or Edge on Android or desktop. Ensure your CAREband device is powered on and nearby.</div>
+    <div class="connect-sub">Open in Chrome or Edge on Android or desktop. All nearby Bluetooth devices will appear in the picker &mdash; select your CAREband device.</div>
     <div class="divider"></div>
     <button class="btn-connect" id="btn-connect" onclick="connectBLE()">Connect Device</button>
     <div class="connect-err" id="connect-err"></div>
+  </div>
+</div>
+
+<!-- Settings Panel -->
+<div id="settings-panel" style="display:none;position:fixed;inset:0;background:rgba(26,34,48,0.5);z-index:600;align-items:center;justify-content:center;">
+  <div class="connect-card">
+    <div class="connect-wordmark">Settings</div>
+    <div style="width:100%;">
+      <div class="card-label" style="margin-bottom:8px;">Alert confirmation beats</div>
+      <div style="display:flex;align-items:center;gap:12px;">
+        <button onclick="adjustConfirm(-1)" style="width:36px;height:36px;border:1px solid var(--border);background:var(--bg);border-radius:var(--radius);font-size:1.2rem;cursor:pointer;font-family:var(--mono);">&#8722;</button>
+        <span id="confirm-display" style="font-family:var(--mono);font-size:1.6rem;min-width:28px;text-align:center;color:var(--text);">3</span>
+        <button onclick="adjustConfirm(1)" style="width:36px;height:36px;border:1px solid var(--border);background:var(--bg);border-radius:var(--radius);font-size:1.2rem;cursor:pointer;font-family:var(--mono);">+</button>
+        <span style="font-family:var(--mono);font-size:0.62rem;color:var(--muted);letter-spacing:0.1em;">consecutive beats</span>
+      </div>
+      <div style="font-family:var(--mono);font-size:0.6rem;color:var(--muted);letter-spacing:0.1em;margin-top:8px;">Range: 1 &ndash; 10 beats</div>
+    </div>
+    <div class="divider"></div>
+    <button class="btn-connect" onclick="closeSettings()">Save &amp; Close</button>
   </div>
 </div>
 
@@ -544,9 +566,11 @@
     </div>
     <div class="confirm-row">
       <span class="confirm-label">Alert confirm</span>
-      <div class="confirm-pip" id="pip-1"></div>
-      <div class="confirm-pip" id="pip-2"></div>
-      <div class="confirm-pip" id="pip-3"></div>
+      <div id="pip-row" style="display:flex;gap:6px;">
+        <div class="confirm-pip" id="pip-1"></div>
+        <div class="confirm-pip" id="pip-2"></div>
+        <div class="confirm-pip" id="pip-3"></div>
+      </div>
     </div>
   </div>
 
@@ -607,7 +631,7 @@ const AVG_READY_CHAR= '19b10002-e8f2-537e-4f6c-d104768a1214';
 
 const THRESHOLD_PCT    = 0.22;
 const WARMUP_S         = 120;
-const CONFIRM_REQUIRED = 3;
+let CONFIRM_REQUIRED = 3;
 
 // ── State ──────────────────────────────────────────────────────────────────
 let device, server, hrChar, avgChar, readyChar;
@@ -656,12 +680,7 @@ function checkThreshold(bpm, avg) {
     alertDismissed = false; // re-arm when HR normalises
   }
 
-  document.getElementById('pip-1').className =
-    'confirm-pip' + (breachStreak >= 1 ? ' lit' : '');
-  document.getElementById('pip-2').className =
-    'confirm-pip' + (breachStreak >= 2 ? ' lit' : '');
-  document.getElementById('pip-3').className =
-    'confirm-pip' + (breachStreak >= 3 ? ' lit' : '');
+  renderPips();
 
   if (breachStreak >= CONFIRM_REQUIRED && !alertDismissed) {
     const pctOver = Math.round(((bpm - avg) / avg) * 100);
@@ -815,6 +834,38 @@ function onReadyNotify(event) {
   updateAvgStatus();
 }
 
+// ── Settings ───────────────────────────────────────────────────────────────
+function openSettings() {
+  document.getElementById('confirm-display').textContent = CONFIRM_REQUIRED;
+  const panel = document.getElementById('settings-panel');
+  panel.style.display = 'flex';
+}
+
+function closeSettings() {
+  document.getElementById('settings-panel').style.display = 'none';
+  renderPips();
+}
+
+function adjustConfirm(delta) {
+  CONFIRM_REQUIRED = Math.min(10, Math.max(1, CONFIRM_REQUIRED + delta));
+  document.getElementById('confirm-display').textContent = CONFIRM_REQUIRED;
+  // Reset streak so old breach state does not carry over
+  breachStreak = 0;
+  renderPips();
+}
+
+// Dynamically build pip indicators to match CONFIRM_REQUIRED
+function renderPips() {
+  const row = document.getElementById('pip-row');
+  row.innerHTML = '';
+  for (let i = 1; i <= CONFIRM_REQUIRED; i++) {
+    const pip = document.createElement('div');
+    pip.className = 'confirm-pip' + (breachStreak >= i ? ' lit' : '');
+    pip.id = 'pip-' + i;
+    row.appendChild(pip);
+  }
+}
+
 // ── BLE Connect ─────────────────────────────────────────────────────────────
 async function connectBLE() {
   const btn = document.getElementById('btn-connect');
@@ -825,7 +876,7 @@ async function connectBLE() {
 
   try {
     device = await navigator.bluetooth.requestDevice({
-      filters: [{ name: 'CAREband' }],
+      acceptAllDevices: true,
       optionalServices: [HR_SERVICE]
     });
 
@@ -850,6 +901,7 @@ async function connectBLE() {
     } catch(e) { console.warn('Avg ready char not found:', e); }
 
     document.getElementById('connect-screen').style.display = 'none';
+    document.getElementById('settings-btn').style.display = 'block';
     document.getElementById('conn-dot').className   = 'conn-dot on';
     document.getElementById('conn-text').textContent = device.name || 'Connected';
 
@@ -862,6 +914,7 @@ async function connectBLE() {
 }
 
 function onDisconnected() {
+  document.getElementById('settings-btn').style.display = 'none';
   document.getElementById('conn-dot').className    = 'conn-dot err';
   document.getElementById('conn-text').textContent = 'Disconnected';
   document.getElementById('connect-screen').style.display = 'flex';
@@ -870,6 +923,8 @@ function onDisconnected() {
   clearInterval(warmupTimer);
   document.getElementById('warmup-banner').classList.remove('visible');
 }
+
+renderPips();
 
 if (!navigator.bluetooth) {
   document.getElementById('connect-err').textContent =
